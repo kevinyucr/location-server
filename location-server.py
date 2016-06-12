@@ -26,6 +26,7 @@ parser.add_argument("--source-system",
                     type=int,
                     default=255,
                     help='MAVLink source system for this GCS')
+
 parser.add_argument("--showmessages",
                     default=False,
                     help="show incoming messages")
@@ -141,10 +142,5 @@ def main():
 	else:
 		mavlink_message_loop(master, socket, plane_location)
 	
-	#thread.start_new_thread(responder_loop, () )
-
-#message_loop(master)
-
-
 if __name__ == "__main__":
 	main()
