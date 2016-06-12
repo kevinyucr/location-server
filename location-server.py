@@ -34,16 +34,7 @@ args = parser.parse_args()
 
 from pymavlink import mavutil
 
-#class geotag_state:
-#	def __init__(self):
-#		self.alt_agl_meters = 0
-#		self.roll_degrees = 0
-#		self.pitch_degrees = 0
-#		self.yaw_degrees = 0
-#		self.lat_degrees = 0
-#		self.lon_degrees = 0
 
-#state = geotag_state()
 
 def server_setup():
 	context = zmq.Context()
@@ -63,7 +54,7 @@ def wait_heartbeat(m):
 	print("Heartbeat from APM (system %u component %u)" % (m.target_system, m.target_system))
 
 def request_data_streams(master, rate):
-	print("Requesting data s" % rate)
+	print("Requesting data %s" % rate)
 	for i in range(0, 3):
 		master.mav.request_data_stream_send(master.target_system, master.target_component,
 											mavutil.mavlink.MAV_DATA_STREAM_ALL, rate, 0)
@@ -74,13 +65,13 @@ def request_data_streams(master, rate):
 	   master.mav.request_data_stream_send(master.target_system, master.target_component,
 										   mavutil.mavlink.MAV_DATA_STREAM_EXTRA1, rate, 1)
 
-def mavlink_message_loop(master, socket, location_msg):
+def mavlink_message_loop(master, socket, plane_location):
 	# wait for the heartbeat msg to find the system ID
 	wait_heartbeat(master)
 	request_data_streams(master, args.rate)
 	'''show incoming mavlink messages'''
 	while True:
-		msg = m.recv_match(blocking=True)
+		msg = master.recv_match(blocking=True)
 		if not msg:
 			return
 		if msg.get_type() == "BAD_DATA":
@@ -89,26 +80,17 @@ def mavlink_message_loop(master, socket, location_msg):
 				sys.stdout.flush()
 
 		elif msg.get_type() == "GLOBAL_POSITION_INT":
-			state.alt_asl_meters = msg.alt / 1000.0
-			state.alt_agl_meters = msg.relative_alt / 1000.0
-			state.lat_degrees = msg.lat
-			state.lon_degrees = msg.lon
+			plane_location.alt_asl_meters = msg.alt / 1000.0
+			plane_location.alt_agl_meters = msg.relative_alt / 1000.0
+			plane_location.lat_degrees = msg.lat / 10000000.0
+			plane_location.lon_degrees = msg.lon / 10000000.0
+			server_send_msg(socket, plane_location)
  
 		elif msg.get_type() == "ATTITUDE":
-			state.roll_degrees = msg.roll * 180.0 / math.pi
-			state.pitch_degrees = msg.pitch * 180.0 / math.pi
-			state.yaw_degrees = msg.yaw * 180.0 / math.pi
-
-		if msg:
-			print("agl: {0}, asl: {1}, roll: {2}, pitch: {3}, yaw: {4}, lat: {5}, lon: {6}".format(
-				state.alt_agl_meters,
-				state.alt_asl_meters,
-				state.roll_degrees,
-				state.pitch_degrees,
-				state.yaw_degrees,
-				state.lat_degrees,
-				state.lon_degrees))
-
+			plane_location.roll_degrees = msg.roll * 180.0 / math.pi
+			plane_location.pitch_degrees = msg.pitch * 180.0 / math.pi
+			plane_location.yaw_degrees = msg.yaw * 180.0 / math.pi
+			server_send_msg(socket, plane_location)
 	
 def demo_message_loop(socket, plane_location):
 	while True:
