@@ -4,7 +4,8 @@
 Requests position and attitude info from a Pixhawk and serves it.
 '''
 
-import sys, struct, time, os, math, random, thread
+import sys, struct, time, os, math, random
+import threading
 import serial
 import zmq
 import proto.location_pb2 
@@ -65,10 +66,41 @@ def request_data_streams(master, rate):
 	   master.mav.request_data_stream_send(master.target_system, master.target_component,
 										   mavutil.mavlink.MAV_DATA_STREAM_EXTRA1, rate, 1)
 
+last_msg = None
+last_msg_lock = threading.Lock()
+MAX_DIFF = 3 # Seconds after last message
+
+def mavlink_watchdog(master):
+	global last_msg, last_msg_lock
+	print("Watchdog thread")
+	while True:
+		now = time.time()
+		with last_msg_lock:
+			diff = now - last_msg
+		
+		if (diff > MAX_DIFF):
+			print("No messages recieved after %s seconds. Requesting streams" % diff)
+			request_data_streams(master, args.rate)
+			with last_msg_lock:
+				last_msg = time.time()
+
+		time.sleep(1)
+
+def feed_watchdog():
+	global last_msg, last_msg, lock
+	with last_msg_lock:
+		last_msg = time.time()
+
 def mavlink_message_loop(master, socket, plane_location):
 	# wait for the heartbeat msg to find the system ID
 	wait_heartbeat(master)
 	request_data_streams(master, args.rate)
+	
+	feed_watchdog()
+	wd_t = threading.Thread(target=mavlink_watchdog, args=(master,))
+	wd_t.daemon = True
+	wd_t.start()
+	
 	'''show incoming mavlink messages'''
 	while True:
 		msg = master.recv_match(blocking=True)
@@ -85,12 +117,14 @@ def mavlink_message_loop(master, socket, plane_location):
 			plane_location.lat_degrees = msg.lat / 10000000.0
 			plane_location.lon_degrees = msg.lon / 10000000.0
 			server_send_msg(socket, plane_location)
+			feed_watchdog()
  
 		elif msg.get_type() == "ATTITUDE":
 			plane_location.roll_degrees = msg.roll * 180.0 / math.pi
 			plane_location.pitch_degrees = msg.pitch * 180.0 / math.pi
 			plane_location.yaw_degrees = msg.yaw * 180.0 / math.pi
 			server_send_msg(socket, plane_location)
+			feed_watchdog()
 	
 def demo_message_loop(socket, plane_location):
 	while True:
